@@ -87,3 +87,84 @@ Other "approaches":
   paper talking about how all the "fast" ML transformer architectures were some
   specific instance of a certain set of structured matrices.
 - Model compression basically truncates part or all of various weights.
+
+Method
+======
+
+(1) Partition the indices j into M disjiont subsets
+
+(2) Each x(m) is stored as i, representing ci(m): the codeword corresponding to
+    i in that codebook
+
+Let C = {C1 ... CM} be the set of M codebooks, where each codebook is itself a
+set of K vectors {c1(m) ... cK(m)}
+
+notes: That's then a rank 3 tensor? (M, K, Z) -- Z seems unintroduced and might
+vary across K. The location in the vector determines which codebook to use, and
+which code_word_ you're closest to determines your index.
+
+(3) So how do we map the queries somewhere reasonable?
+
+G = R^(KxM)
+g(q): (i,m) -> δ(q(m), ci(m))
+
+I.e., the i'th row of g(q) is the coordinate-wise distance between the query in
+that partition and the codeword for that row and partition. We're just
+precomputing all the distances to the entire codebook.
+
+notes: The paper has bolding to indicate vectors. δ is actually bolded in that
+g(q) definition, as are its arguments, and this indicates that its arguments
+are vectors and that δ horizontally sums them. There still isn't any evidence
+that Z need necessarily be constant-width.
+
+(4) Then the estimated distance function is just to go through each i in h(x),
+add the associated entry in g(q) to a running total, and return the result.
+
+Extended Method
+===============
+
+The above description is just product quantization. Bolt (the referenced paper)
+has two additions:
+
+(1) Use smaller codebooks than normal (16 centroids)
+
+(2) Approximate the distance matrix D
+
+The first is just a design parameter so I won't touch on it much (though it's
+important in how it enables easy vectorization), but the distance matrix
+approximation seems interesting.
+
+- We're learning 8-bit quantizations of the entries of D. I'll wait to see what
+  happens when we get into the code, but I think AVX2 still reigns supreme for
+  most CPU workloads, and it seems like Bolt might be optimized moreso for SSE.
+  Alternative parameters might perform better.
+- (quote) We can leverage vector instructions to perform V lookups for V consecutive
+  h(x) where V = 16, 32, 64 depending on the platform. It looks like this is
+  considering analyzing a single input x at a time and considering all its
+  constituent parts.
+- The quantization function is learned at training time. For a given column of
+  D across multiple query vectors qm, we wish to minimize the quantization
+  error (MSE of the estimated distances vs real distances, assuming a linear
+  column-wise reconstruction).
+- Bm(y) = max(0, min(255, [ay-b]))
+- y' = (bm(y)+b)/a
+- Proposal to set b=F^-1(alpha), a=255/(F^-1(1-alpha)-b) for some alpha. F^-1
+  is the inverse CDF of Y, estimated emperically (Y is the distribution of
+  distances when looking at a column of D for a set of query subvectors and the
+  distribution X of database vectors).
+- Note that Y can be estimated extremely cheaply. There aren't many ci vectors,
+  so you can maintain a frequency for each of those 16 vectors across X and
+  analyze all the query vectors crossed with those 16. A random sampling should
+  suffice (this isn't an exact science anyway), and the literature is full of
+  fast quantile estimation.
+- They used a grid search over {0, .001, .002, .005, .01, .02, .05, .1} for
+  alpha.
+- The alpha values are shared across D tables (not across subvectors). The b
+  values are learned individually.
+
+notes: I don't understand something about this. There's a fixed alpha we can
+find with a grid search, and that's moderately expensive. Then b and a are
+defined precisely with respect to that alpha. Supposedly though, b values are
+table-specific. And there's a table per query.
+
+

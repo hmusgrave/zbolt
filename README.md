@@ -167,4 +167,21 @@ find with a grid search, and that's moderately expensive. Then b and a are
 defined precisely with respect to that alpha. Supposedly though, b values are
 table-specific. And there's a table per query.
 
+notes: I looked at their python source. Z is fixed via padding.
+
+notes: Their source also _only_ learns offsets at training time and doesn't
+require the same exact queries at serving time to use those. I apparently have
+no idea how query encoding works.
+
+notes: Their code is doing something awful. There's some _other_ lookup table
+thingamajig somewhere else only called deep in some spaghetti code whose result
+is never used. I don't know this is a great way to figure out what's going on.
+
+notes: They indicate that a has to be shared whereas b can't because the error
+from b can be corrected later but it doesn't make sense to rescale distances
+(weighting each table differently). I don't think that makes sense though. The
+intent of all of these is to approximate the distance matrix as well as
+possible. If some columns have lots of distances and others don't have many
+you'll get better representational accuracy if those are spread out.
+
 

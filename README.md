@@ -184,4 +184,157 @@ intent of all of these is to approximate the distance matrix as well as
 possible. If some columns have lots of distances and others don't have many
 you'll get better representational accuracy if those are spread out.
 
+notes: All right...I think I understand a little bit. Having the same `a`
+scaling allows you to mix and match distances _before_ applying the scaling and
+save some vectorized multiplies. Then you can have different `b` offsets
+trivially because they can be pre-accumulated into a correction factor applied
+to the final result.
 
+notes: I was concerned about the beta/alpha computations and how those seem to
+rely on global information across all queries while
+simultaneously...not...doing that. Their source code does something very
+different from what their paper does:
+
+(1) Each table has its distances (for a single subvector location) percentiled to
+choose the floor values, and the results are clipped.
+
+(2) _Those_ percentiles are percentiled to produce the ceiling. I think this is
+part of why the authors found lower percentiles to work best -- there's a
+compounding effect of sequential percentiles that makes the ceiling further
+than one might guess.
+
+(3) The returned values are: floors for each LUT, a single scalar for all LUTs,
+and also the chosen alpha (presumably used for other incoming queries?).
+
+(3a) alpha is ignored...
+
+(4a) There's a set_data function that persists the data we're encoding,
+separately from what was "fit".
+
+(4b) Oh god, that's all done in cpp.
+
+(4c) Oh god, it's just spaghetti globals.
+
+(4d) There's no way that's super important.
+
+notes: I don't see any good reason why `a` shouldn't be different for each LUT
+(shared across subvectors, disjoint for separate queries). It's a negligible
+memory increase compared to the LUT sizes, and it's hardly an additional
+computational cost at all (perhaps more expensive data loading) since _some_
+multiplication still has to happen per query anyway.
+
+notes: For many use cases I'm not sure how beneficial the percentile grid
+search is. I'm personally often working with matrices smaller than 2^10 or so,
+so even with quite a few centroids there would literally be no difference
+between {0, .001, .005, .01}. Taking the smallest and largest values is
+probably more than sufficient. That then encodes, for each query, a single
+scalar, a single offset, and its discretization. The process is not even a
+little bit reversible in the sense that you can't compute the distances of
+subvectors anymore, but it's lightning fast and almost as accurate.
+
+I think we're going to do the first implementation in Zig. I see no good reason
+to play with Python first. This seems simple enough.
+
+K-Means
+=======
+
+We probably ought to figure out how this works and devise a suitable
+initialization scheme.
+
+- It looks like kmeans++ is pretty good.
+
+(1) Choose a center uniformly at random
+
+(2) For each data point not chosen yet, compute D(x), the distance between x
+and the nearest center that has already been chosen
+
+(3) Choose one new data point at random as a new center, using a weighted
+probability distribution where a point x is chosen with probability
+proportional to D(x)^2
+
+(4) Repeat (2-3) till k centers have been chosen
+
+(5) Proceed with some kmeans iteration procedure
+
+notes: 
+
+(6) If the vectors are even a tiny bit nontrivial in size we probably want to
+store computed distances to centers.
+
+(7) There's a meta-procedure for initialization where you apply a random
+partition, cluster inside there, and pairwise-nearest-neighbor the clusters.
+Especially when applied recursively, this basically gives you more chances at
+reasonable initializations but only on a small subset of the data so you retain
+linear costs.
+
+(7a) IMO you'd probably want to run a few optimization passes after doing that.
+
+- And what exactly do we do for the update scheme? Supposedly there are things
+  much faster than the naive approach.
+
+To start with, apparently you get decent results by starting with a subset of
+the data. Actually in hindsight, this is basically what the meta-procedure is
+doing.
+
+Loyd's Algorithm
+
+(1) Calculate centroids
+
+(2) Assign to nearest centroid
+
+(3) Repeat (1-2) till assignments don't change.
+
+Supposedly you can get significant speedups via KD-Trees. For 16 centroids I'm
+not sure it's a huge win. At a minimum you have 5 distance computations just
+for naive checks on the tree. This on average roughly doubles as you
+recursively check the other plane halves, so on average you save roughly 6
+distance computations and pick up a fair bit of other overhead. It might be a
+little faster for us, but it's a lot of code I don't really want to write.
+
+Random Seeds
+============
+
+Fine. I guess we need a way to generate nice random numbers. Jax has a nice
+idea based on seed splitting with an array syntax. TODO.
+
+Pairwise Nearest Neighbor
+=========================
+
+Can we avoid the quadratic cost?
+
+Yeah, probably. For each point we can easily compute the nearest neighbor in N
+log(N) time. N is only 32, so that's probably dominated by overhead and whatnot
+if we're not careful. Might have to hand-tune this one.
+
+Nearest Neighbor isn't symmetric, so we can't just blindly merge those.
+
+Grr. Apparently PNN is lower-bounded by N^2. Approximations might suffice, but
+we have to bite the bullet I think.
+
+Blah blah, "Practical methods for speeding-up the pairwise nearest neighbor
+method"
+
+d(a,b) = n(a)n(b)/(n(a)+n(b))||c(a)-c(b)||^2
+
+i.e., merging two clusters is roughly as expensive as the distance between
+their centers scaled by a sort of mean of the number of interactions divided by
+the number of elements.
+
+(1) Each cluster has a pointer to its nearest neighbor (minimizing the merge
+cost)
+
+(2) Greedily merge the two closest clusters
+
+(3) Repeat (2) as necessary, updating invariants
+
+(4) Distances never decrease from a merge, so you can delay updating pointers
+so long as it never becomes a candidate for being the smallest distance.
+
+(5) 
+
+Eh, this is all garbage. Why PNN? Let's just KNN the centroids. Partitions are
+approximately equally sized, so this roughly partitions the space into the
+number of elements we want while not magnifying the effects from merging
+disparate clusters. Initialization isn't super important because the average
+cluster size will be 2, so the space will be reasonably well covered by any
+random selection.

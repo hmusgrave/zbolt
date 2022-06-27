@@ -347,7 +347,63 @@ threads, or other natural ways to generate keys, and with a 128-bit key space
 it's trivial to reserve 32+ bits for the dedicated purpose of ensuring
 uniqueness. Applications are in control of avoiding key/seed reuse.
 
-ciphers: TODO
+ciphers:
+
+AES:
+- Supported natively for a decade
+- uses a pre-computed set of 11 "round keys"
+- 10-round iterated block cipher
+
+Threefish:
+- Like AES
+- Software-friendly P blocks
+- 72 rounds
+
+ARS:
+- Round keys are generated using 64-bit addition on the separate high and low
+  halves of the 128-bit ARS key
+- (Eqn 6.) rk0 = user_key, rki = rk(i-1) + constant
+- constant is fairly arbitrary, verified with (sqrt(3)-1) and the golden ratio.
+- ARS-5 is crush resistant, but ARS-4 is not.
+
+Threefry:
+- Threefry-NxW-R has the same pattern as Threefish with R rounds and N W-bit
+  inputs and outputs.
+- Threefry ignores the "tweak" (an extra 128-bits of key-like input)
+- For W=64 and N>=4 Threefry takes the rotation constants from Threefish.
+- For other parameters, we generate Threefry's rotation constants using the
+  code provided with the Skein reference materials.
+
+Round 4x32 unknown 2x64
+0     10   26      16
+1     11   21      42
+2     13   27      12
+3     23    5      31
+4      6   20      16
+5     17   11      32
+6     25   10      24
+7     18   20      21
+
+The rounds are mod 8. All of 2x64-13, 4x32-12, 4x64-12, and 4x64-72 are crush
+resistant. Presumably the middle column is 4x64?
+
+I suppose we can figure out how to generate this table on our own.
+
+Philox:
+L' = Bk(R) = mullow(R, M)
+R' = Fk(R) +%2 L = mulhi(R,M) +%2 k +%2 L
+
+- For N=2, Philox-2xW-R performs R rounds of the Philox S-box on a pair of
+  W-bit inputs.
+- For larger N, the inputs are permuted using the Threefish N-word P-box
+  before being fed, two-at-a-time, into N/2 Philox S-boxes, each with its own
+  multiplier M, and key k.
+- Then N/2 multipliers are constant from round to round, while the N/2 keys are
+  updated for each round according to the weyl sequence defined in Eqn 6.
+
+4x32: 0xCD9E8D57, 0xD2511F53
+2x64: 0xD2B74407B1CE6E93
+4x64: 0xCA5A826395121157, 0xD2E7470EE14C6C93
 
 Splitting Model
 ===============

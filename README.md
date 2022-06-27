@@ -295,7 +295,117 @@ Random Seeds
 ============
 
 Fine. I guess we need a way to generate nice random numbers. Jax has a nice
-idea based on seed splitting with an array syntax. TODO.
+idea based on seed splitting with an array syntax.
+
+Jax:
+(1) Threefry counter PRNG
+(2) A functional array-oriented splitting model
+
+Threefry:
+random123sc11.pdf
+
+The threefry paper includes several other PRNG's (we should probably implement
+them all?) and its own splitting model. Threefry is fast but not
+cryptographically secure per se. It does pass a lot of tests indicating monte
+carlo suitability. Other PRNG's are secure and reasonably fast. I know Jax's
+source (2) spends a lot of time covering the API and a little describing why
+their splitting model generates better random numbers than alternatives, so
+we'll need to check if that differs from this source substantially.
+
+The model is
+- f: S -> S
+- g: K x Zj x S -> U
+
+S -- internal state space
+U -- key space
+K -- integer output multiplicity
+Zj -- extract a small number of output values from each internal state
+
+f -- transition function
+g -- output function
+
+Traditional PRNG's have a complicated f and trivial g. The design space here
+uses a simple f and complicated g. In particular,
+
+g(k,j) = h(j) o b(k)
+
+for a keyed bijection b(k) (i.e., b is a family of functions indexed by k, each
+of which is a bijection of some suitable range of integers), and a simple
+selector h(j).
+
+S will consist of p-bit integers. The selector h(j) chooses the jth r-bit block
+with r<=floor(p/J). The state transition function can be as simple as
+
+f(s) = (s+1)mod2^p
+
+and so is referred to as a counter, though it may be more complicated
+
+A natural API for counter-based PRNGs provides the keyed bijection b(k) but
+leaves the application in complete control of the key k and the counter n.
+Often applications will have multiple objects, multiple object types, multiple
+threads, or other natural ways to generate keys, and with a 128-bit key space
+it's trivial to reserve 32+ bits for the dedicated purpose of ensuring
+uniqueness. Applications are in control of avoiding key/seed reuse.
+
+ciphers: TODO
+
+Splitting Model
+===============
+
+I guess the synopsis at the end of the Threefry paper settles the question of
+whether the splitting paper does anything substantially different. The answer
+is definitely yes. The Threefry paper leaves control over state completely to
+the application developer, and we're going to build on top of that with an
+appropriate splitting model.
+
+I'm pretty sure oopsla14.pdf is different from what Jax themselves use, but it
+looks friendly enough.
+
+To create a new PRNG, simply use an existing PRNG instance to generate a new
+seed and a new gamma value pseudorandomly. In practice they tweak this idea
+slightly. First let's back up and see what gamma is, then let's see their
+tweaks.
+
+notes: They have some measure of proof that such a simple idea
+probabilistically generates independent streams.
+
+So the gamma comes from DOTMIX:
+- When PRNGs are split, you can conceptually keep track of an index associated
+  to each branch
+- Each PRNG is uniquely determined by that set of indices
+- We want to dot those indices with a random value gamma, add a seed sigma, and
+  run it through a mixing function.
+
+notes: It looks like the mixing function produces effectively a starting point
+for our pseudorandom cycle.
+
+notes: they talk about everything happening modulo a large prime. Later they
+indicate that you lose 10 or so bits of security if you use a power of 2
+instead. We'll do that for the shift efficiency.
+
+SplittableRandom (SPLITMAX):
+- Two 64-bit fields, seed and gamma
+- Gamma must be odd to keep a high period.
+- The sequence of seeds is (seed + n * gamma)
+- A mix function produces a result
+- We can actually do away with the dotmix strategy. This gamma is something
+  different.
+- The root default gamma value is the closest odd integer to 2^64/phi (phi ==
+  golden ratio)
+
+Both Random APIs
+================
+
+Combining those two ideas is relatively simple. The state update function is
+(s, g) -> (s+g, g)%p. We choose J=1. The mixer functions work exactly as in the
+Threefry paper (and novel hashing functions were one of their signature
+contributions, we have a todo above use for handling that). Then we
+additionally have a splitting model for probabilistically generating
+independent streams.
+
+To keep with jax's API, we'll never explicitly update the seed. We either use
+the state to produce random values, or we split it into n values by creating
+the sequence of n seeds and using each of those to generate new PRNGs.
 
 Pairwise Nearest Neighbor
 =========================

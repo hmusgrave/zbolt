@@ -63,10 +63,20 @@ data: []V, assignment: []usize) void {
     }
 }
 
-fn uniform_centers(comptime V: type, _key: anytype, data: []V, comptime
+fn uniform_centers(allocator: Allocator, comptime V: type, _key: anytype, data: []V, comptime
 ncenters: usize) [ncenters]V {
     var key = _key;
-    var choices = key.randint(usize, 0, data.len, ncenters);
+    var choices = key.randint(usize, 0, data.len-1, ncenters);
+    var seen = std.hash_map.AutoHashMap(usize, void).init(allocator);
+    defer seen.deinit();
+    for (choices) |*c| {
+        var attempt = c.*;
+        while (seen.get(attempt) != null) {
+            attempt = key.randint(usize, 0, data.len-1, 1)[0];
+        }
+        seen.putNoClobber(attempt, {}) catch unreachable;
+        c.* = attempt;
+    }
     var centroids: [ncenters]V = undefined;
     for (centroids) |*x, i|
         x.* = data[choices[i]];
@@ -95,9 +105,13 @@ ncenters: usize) ![ncenters]V {
     }
     var min_buf = try allocator.alloc(f64, data.len);
     defer allocator.free(min_buf);
+    var seen = std.hash_map.AutoHashMap(usize, void).init(allocator);
+    defer seen.deinit();
     for (centroids) |*c, i| {
         if (i == 0) {
-            c.* = data[keys[i].randint(usize, 0, data.len, 1)[0]];
+            const idx = keys[i].randint(usize, 0, data.len-1, 1)[0];
+            c.* = data[idx];
+            seen.putNoClobber(idx, {}) catch unreachable;
         } else {
             for (min_buf) |*m, j| {
                 var least = dists[0][j];
@@ -105,7 +119,12 @@ ncenters: usize) ![ncenters]V {
                     least = if (d[j]<least) d[j] else least;
                 m.* = least;
             }
-            c.* = data[keys[i].weighted_choice(f64, min_buf, 1)[0]];
+            var idx = keys[i].weighted_choice(f64, min_buf, 1)[0];
+            while (seen.get(idx) != null) {
+                idx = keys[i].weighted_choice(f64, min_buf, 1)[0];
+            }
+            c.* = data[idx];
+            seen.putNoClobber(idx, {}) catch unreachable;
         }
         for (dists[i]) |*v, j|
             v.* = l2(V, c.*, data[j]);
@@ -144,7 +163,7 @@ fn loyd_uniform(
     data: []V,
     comptime ncenters: usize
 ) ![ncenters]V {
-    var centroids = uniform_centers(V, key, data, ncenters);
+    var centroids = uniform_centers(allocator, V, key, data, ncenters);
     var assignment = try allocator.alloc(usize, data.len);
     defer allocator.free(assignment);
     var tmp_assignment = try allocator.alloc(usize, data.len);
@@ -193,14 +212,71 @@ test "loyd square should partition basic cluster" {
     try std.testing.expectEqual(assignment[1], assignment[3]);
 }
 
+// TODO: Handle duplicate data vectors
 fn loyd_recursive(
     allocator: Allocator,
     comptime V: type,
     _key: anytype,
     data: []V,
     comptime ncenters: usize,
-) ![ncenters]V {
-    if (data.len
+) Allocator.Error![ncenters]V {
+    if (data.len <= ncenters*8)
+        return try loyd_square(allocator, V, _key, data[0..], ncenters);
     var key = _key;
-    var partitions = try key.randint_alloc(allocator, usize, 0, 16, data.len);
+    var keys = key.split(4);
+    var partitions = try keys[0].randint_alloc(allocator, u2, 0, 1, data.len);
+    defer allocator.free(partitions);
+    var zcount: usize = 0;
+    for (partitions) |x|
+        zcount += @intCast(usize, x);
+    zcount = data.len-zcount;
+    var data1 = try allocator.alloc(V, zcount);
+    defer allocator.free(data1);
+    var data2 = try allocator.alloc(V, data.len-zcount);
+    defer allocator.free(data2);
+    var c1: usize = 0;
+    var c2: usize = 0;
+    for (partitions) |x, i| {
+        if (x == 0) {
+            data1[c1] = data[i];
+            c1 += 1;
+        } else {
+            data2[c2] = data[i];
+            c2 += 1;
+        }
+    }
+    var centroids1 = try loyd_recursive(allocator, V, keys[1], data1, ncenters);
+    var centroids2 = try loyd_recursive(allocator, V, keys[2], data2, ncenters);
+    var max_centroids = try allocator.alloc(V, ncenters*2);
+    defer allocator.free(max_centroids);
+    std.mem.copy(V, max_centroids, centroids1[0..]);
+    std.mem.copy(V, max_centroids[ncenters..], centroids2[0..]);
+    var centroids = try loyd_uniform(allocator, V, keys[3], max_centroids[0..], ncenters);
+    var ta = try allocator.alloc(usize, data.len);
+    defer allocator.free(ta);
+    var tb = try allocator.alloc(usize, data.len);
+    defer allocator.free(tb);
+    return _loyd(V, data, ncenters, centroids, ta, tb);
+}
+
+test "loyd recursive" {
+    var key = random.PRNGKey(random.Hashes.aes5){.seed = 42};
+    const V = @Vector(4, f32);
+    var data: [128]V = undefined;
+    for (data) |*x, i| {
+        const c = @intToFloat(f32, i);
+        if (i < data.len >> 1) {
+            x.* = V{c, c+1, c+2, c+3};
+        } else {
+            x.* = V{-c, -c+1, -c+2, -c+3};
+        }
+    }
+    const allocator = std.testing.allocator;
+    var centers = try loyd_recursive(allocator, V, key, data[0..], 2);
+    var expected = [_]V{
+        V{31.5, 32.5, 33.5, 34.5},
+        V{-95.5, -94.5, -93.5, -92.5}
+    };
+    try std.testing.expectEqual(l2(V, centers[0], expected[0]), 0.0);
+    try std.testing.expectEqual(l2(V, centers[1], expected[1]), 0.0);
 }

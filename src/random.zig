@@ -55,9 +55,10 @@ pub fn PRNGKey(comptime mix: fn (u128) u128) type {
         }
 
         pub fn randint_alloc(self: *@This(), allocator: Allocator, comptime T: type, m: T, M: T, n: usize) ![]T {
-            var entropy = self.random(n);
+            var entropy = try self.random_alloc(allocator, n);
+            defer allocator.free(entropy);
             var rtn = try allocator.alloc(T, n);
-            const diff = M-m+1;
+            const diff = M-m+1;  // TODO: Overflow
             for (rtn) |*x, i|
                 x.* = @intCast(T, m + (entropy[i] % diff));
             return rtn;
@@ -84,6 +85,7 @@ pub fn PRNGKey(comptime mix: fn (u128) u128) type {
         }
 
         // TODO: reduce to loglinear time
+        // TODO: document behavior for zero/neg-weighted data
         pub fn weighted_choice(self: *@This(), comptime T: type, w: []T, comptime n: usize) [n]usize {
             var total: T = 0;
             for (w) |x|

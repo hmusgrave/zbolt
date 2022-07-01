@@ -1,3 +1,6 @@
 - Optimize
 - Software implementations of inline asm
 - Safety-check arguments in non-fast modes
+- Randomness isn't flawless right now because duplicates are impossible. Should
+  check crush resistance.
+- More random mixers

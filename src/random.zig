@@ -44,11 +44,10 @@ pub fn PRNGKey(comptime mix: fn (u128) u128) type {
             return @ptrCast([*]u128, rtn.ptr)[0..n];
         }
 
-        pub fn randint(self: *@This(), comptime T: type, m: T, M: T, comptime
-        n: usize) [n]T {
+        pub fn randint(self: *@This(), comptime T: type, m: T, M: T, comptime n: usize) [n]T {
             var entropy = self.random(n);
             var rtn: [n]T = undefined;
-            const diff = M-m+1;
+            const diff = M - m + 1;
             for (rtn) |*x, i|
                 x.* = @intCast(T, m + (entropy[i] % diff));
             return rtn;
@@ -58,18 +57,18 @@ pub fn PRNGKey(comptime mix: fn (u128) u128) type {
             var entropy = try self.random_alloc(allocator, n);
             defer allocator.free(entropy);
             var rtn = try allocator.alloc(T, n);
-            const diff = M-m+1;  // TODO: Overflow
+            const diff = M - m + 1; // TODO: Overflow
             for (rtn) |*x, i|
                 x.* = @intCast(T, m + (entropy[i] % diff));
             return rtn;
         }
-        
+
         pub fn uniform(self: *@This(), comptime n: usize) [n]f64 {
             var entropy = self.random((n >> 1) + 1);
             var rtn: [n]f64 = undefined;
             for (rtn) |*x, i| {
                 var r = entropy[i >> 1];
-                r = if (i&1 == 0) r & std.math.maxInt(u64) else r >> 64;
+                r = if (i & 1 == 0) r & std.math.maxInt(u64) else r >> 64;
                 x.* = @intToFloat(f64, r) / @intToFloat(f64, std.math.maxInt(u64));
             }
             return rtn;
@@ -99,7 +98,7 @@ pub fn PRNGKey(comptime mix: fn (u128) u128) type {
                     rt += w[count];
                     count += 1;
                 }
-                rtn[i] = count-1;
+                rtn[i] = count - 1;
             }
             return rtn;
         }
@@ -107,14 +106,10 @@ pub fn PRNGKey(comptime mix: fn (u128) u128) type {
 }
 
 test "Weights" {
-    var p = PRNGKey(Hashes.aes5){.seed = 42};
-    var weights = [_]f64 {1, 5, 25};
+    var p = PRNGKey(Hashes.aes5){ .seed = 42 };
+    var weights = [_]f64{ 1, 5, 25 };
     var random = p.weighted_choice(f64, weights[0..], 100);
-    var expected = [_]usize { 2, 0, 2, 2, 2, 2, 2, 1, 2, 1, 2, 2, 2, 2, 2, 2,
-    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 0, 2, 2, 2, 2, 1, 2, 2, 2, 2,
-    2, 2, 2, 2, 1, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2,
-    1, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1, 2, 1, 2, 2, 1, 2, 2, 2, 2, 2, 0, 2, 2, 1,
-    2, 2, 2, 2, 2, 2, 2, 2, 1 };
+    var expected = [_]usize{ 2, 0, 2, 2, 2, 2, 2, 1, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 0, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1, 2, 1, 2, 2, 1, 2, 2, 2, 2, 2, 0, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 1 };
     try std.testing.expectEqual(random.len, expected.len);
     for (random) |r, i|
         try std.testing.expectEqual(r, expected[i]);

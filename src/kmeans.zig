@@ -30,7 +30,7 @@ fn all_centroids(comptime V: type, data: []V, assignment: []usize, comptime nc: 
 
 test "centroid" {
     const V = @Vector(4, f32);
-    var data = [_]V{V{1, 4, 7, 10}, V{-1, -2, -3, -4}};
+    var data = [_]V{ V{ 1, 4, 7, 10 }, V{ -1, -2, -3, -4 } };
     var rtn = centroid(V, data[0..]);
     var i: usize = 0;
     while (i < 4) : (i += 1)
@@ -38,24 +38,23 @@ test "centroid" {
 }
 
 fn dot(comptime V: type, a: V, b: V) @typeInfo(V).Vector.child {
-    return @reduce(.Add, a*b);
+    return @reduce(.Add, a * b);
 }
 
 fn l2(comptime V: type, a: V, b: V) @typeInfo(V).Vector.child {
-    return dot(V, a-b, a-b);
+    return dot(V, a - b, a - b);
 }
 
-fn assign(comptime V: type, comptime ncenters: usize, centroids: [ncenters]V,
-data: []V, assignment: []usize) void {
+fn assign(comptime V: type, comptime ncenters: usize, centroids: [ncenters]V, data: []V, assignment: []usize) void {
     const ti = @typeInfo(V).Vector;
     _ = ncenters;
     for (assignment) |*x, i| {
         var best_i: usize = 0;
         var best_d: ti.child = l2(V, data[i], centroids[0]);
-        for (centroids[1..]) |c,j| {
+        for (centroids[1..]) |c, j| {
             const new_d: ti.child = l2(V, data[i], c);
             if (new_d < best_d) {
-                best_i = j+1;
+                best_i = j + 1;
                 best_d = new_d;
             }
         }
@@ -63,16 +62,15 @@ data: []V, assignment: []usize) void {
     }
 }
 
-fn uniform_centers(allocator: Allocator, comptime V: type, _key: anytype, data: []V, comptime
-ncenters: usize) [ncenters]V {
+fn uniform_centers(allocator: Allocator, comptime V: type, _key: anytype, data: []V, comptime ncenters: usize) [ncenters]V {
     var key = _key;
-    var choices = key.randint(usize, 0, data.len-1, ncenters);
+    var choices = key.randint(usize, 0, data.len - 1, ncenters);
     var seen = std.hash_map.AutoHashMap(usize, void).init(allocator);
     defer seen.deinit();
     for (choices) |*c| {
         var attempt = c.*;
         while (seen.get(attempt) != null) {
-            attempt = key.randint(usize, 0, data.len-1, 1)[0];
+            attempt = key.randint(usize, 0, data.len - 1, 1)[0];
         }
         seen.putNoClobber(attempt, {}) catch unreachable;
         c.* = attempt;
@@ -83,8 +81,7 @@ ncenters: usize) [ncenters]V {
     return centroids;
 }
 
-fn square_centers(allocator: Allocator, comptime V: type, _key: anytype, data: []V, comptime
-ncenters: usize) ![ncenters]V {
+fn square_centers(allocator: Allocator, comptime V: type, _key: anytype, data: []V, comptime ncenters: usize) ![ncenters]V {
     var key = _key;
     var keys = key.split(ncenters);
     var centroids: [ncenters]V = undefined;
@@ -109,14 +106,14 @@ ncenters: usize) ![ncenters]V {
     defer seen.deinit();
     for (centroids) |*c, i| {
         if (i == 0) {
-            const idx = keys[i].randint(usize, 0, data.len-1, 1)[0];
+            const idx = keys[i].randint(usize, 0, data.len - 1, 1)[0];
             c.* = data[idx];
             seen.putNoClobber(idx, {}) catch unreachable;
         } else {
             for (min_buf) |*m, j| {
                 var least = dists[0][j];
                 for (dists[1..i]) |d|
-                    least = if (d[j]<least) d[j] else least;
+                    least = if (d[j] < least) d[j] else least;
                 m.* = least;
             }
             var idx = keys[i].weighted_choice(f64, min_buf, 1)[0];
@@ -156,13 +153,7 @@ fn _loyd(
     }
 }
 
-fn loyd_uniform(
-    allocator: Allocator,
-    comptime V: type,
-    key: anytype,
-    data: []V,
-    comptime ncenters: usize
-) ![ncenters]V {
+fn loyd_uniform(allocator: Allocator, comptime V: type, key: anytype, data: []V, comptime ncenters: usize) ![ncenters]V {
     var centroids = uniform_centers(allocator, V, key, data, ncenters);
     var assignment = try allocator.alloc(usize, data.len);
     defer allocator.free(assignment);
@@ -171,13 +162,7 @@ fn loyd_uniform(
     return _loyd(V, data, ncenters, centroids, assignment, tmp_assignment);
 }
 
-fn loyd_square(
-    allocator: Allocator,
-    comptime V: type,
-    key: anytype,
-    data: []V,
-    comptime ncenters: usize
-) ![ncenters]V {
+fn loyd_square(allocator: Allocator, comptime V: type, key: anytype, data: []V, comptime ncenters: usize) ![ncenters]V {
     var centroids = try square_centers(allocator, V, key, data, ncenters);
     var assignment = try allocator.alloc(usize, data.len);
     defer allocator.free(assignment);
@@ -187,11 +172,10 @@ fn loyd_square(
 }
 
 test "loyd uniform should partition basic cluster" {
-    var key = random.PRNGKey(random.Hashes.aes5){.seed=42};
+    var key = random.PRNGKey(random.Hashes.aes5){ .seed = 42 };
     const allocator = std.testing.allocator;
     const V = @Vector(4, f32);
-    var data = [_]V{V{0, 1, 2, 3}, V{4, 5, 6, 7}, V{0.5, 2.3, 2.4, 2.9}, V{6,
-    5, 4, 8}};
+    var data = [_]V{ V{ 0, 1, 2, 3 }, V{ 4, 5, 6, 7 }, V{ 0.5, 2.3, 2.4, 2.9 }, V{ 6, 5, 4, 8 } };
     var centers = try loyd_uniform(allocator, V, key, data[0..], 2);
     var assignment: [4]usize = undefined;
     assign(V, 2, centers, data[0..], assignment[0..]);
@@ -200,11 +184,10 @@ test "loyd uniform should partition basic cluster" {
 }
 
 test "loyd square should partition basic cluster" {
-    var key = random.PRNGKey(random.Hashes.aes5){.seed=42};
+    var key = random.PRNGKey(random.Hashes.aes5){ .seed = 42 };
     const allocator = std.testing.allocator;
     const V = @Vector(4, f32);
-    var data = [_]V{V{0, 1, 2, 3}, V{4, 5, 6, 7}, V{0.5, 2.3, 2.4, 2.9}, V{6,
-    5, 4, 8}};
+    var data = [_]V{ V{ 0, 1, 2, 3 }, V{ 4, 5, 6, 7 }, V{ 0.5, 2.3, 2.4, 2.9 }, V{ 6, 5, 4, 8 } };
     var centers = try loyd_square(allocator, V, key, data[0..], 2);
     var assignment: [4]usize = undefined;
     assign(V, 2, centers, data[0..], assignment[0..]);
@@ -220,7 +203,7 @@ fn loyd_recursive(
     data: []V,
     comptime ncenters: usize,
 ) Allocator.Error![ncenters]V {
-    if (data.len <= ncenters*8)
+    if (data.len <= ncenters * 8)
         return try loyd_square(allocator, V, _key, data[0..], ncenters);
     var key = _key;
     var keys = key.split(4);
@@ -229,10 +212,10 @@ fn loyd_recursive(
     var zcount: usize = 0;
     for (partitions) |x|
         zcount += @intCast(usize, x);
-    zcount = data.len-zcount;
+    zcount = data.len - zcount;
     var data1 = try allocator.alloc(V, zcount);
     defer allocator.free(data1);
-    var data2 = try allocator.alloc(V, data.len-zcount);
+    var data2 = try allocator.alloc(V, data.len - zcount);
     defer allocator.free(data2);
     var c1: usize = 0;
     var c2: usize = 0;
@@ -247,7 +230,7 @@ fn loyd_recursive(
     }
     var centroids1 = try loyd_recursive(allocator, V, keys[1], data1, ncenters);
     var centroids2 = try loyd_recursive(allocator, V, keys[2], data2, ncenters);
-    var max_centroids = try allocator.alloc(V, ncenters*2);
+    var max_centroids = try allocator.alloc(V, ncenters * 2);
     defer allocator.free(max_centroids);
     std.mem.copy(V, max_centroids, centroids1[0..]);
     std.mem.copy(V, max_centroids[ncenters..], centroids2[0..]);
@@ -260,23 +243,20 @@ fn loyd_recursive(
 }
 
 test "loyd recursive" {
-    var key = random.PRNGKey(random.Hashes.aes5){.seed = 42};
+    var key = random.PRNGKey(random.Hashes.aes5){ .seed = 42 };
     const V = @Vector(4, f32);
     var data: [128]V = undefined;
     for (data) |*x, i| {
         const c = @intToFloat(f32, i);
         if (i < data.len >> 1) {
-            x.* = V{c, c+1, c+2, c+3};
+            x.* = V{ c, c + 1, c + 2, c + 3 };
         } else {
-            x.* = V{-c, -c+1, -c+2, -c+3};
+            x.* = V{ -c, -c + 1, -c + 2, -c + 3 };
         }
     }
     const allocator = std.testing.allocator;
     var centers = try loyd_recursive(allocator, V, key, data[0..], 2);
-    var expected = [_]V{
-        V{31.5, 32.5, 33.5, 34.5},
-        V{-95.5, -94.5, -93.5, -92.5}
-    };
+    var expected = [_]V{ V{ 31.5, 32.5, 33.5, 34.5 }, V{ -95.5, -94.5, -93.5, -92.5 } };
     try std.testing.expectEqual(l2(V, centers[0], expected[0]), 0.0);
     try std.testing.expectEqual(l2(V, centers[1], expected[1]), 0.0);
 }

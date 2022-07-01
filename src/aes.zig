@@ -20,15 +20,16 @@ pub fn init() void {
 }
 
 pub fn aes5(data: u128) u128 {
+    init();
     return @bitCast(V4, _aes.aesenc_5(@bitCast(V4, data), W5));
 }
 
 pub fn aes10(data: u128) u128 {
+    init();
     return @bitCast(V4, _aes.aesenc_10(@bitCast(V4, data), W10));
 }
 
 test "Sample data with trivial key encrypts to known correct values" {
-    init();
     var data: u128 = 0xFFFF0000FFFF0000FFFF0000FFFF4321;
     try std.testing.expectEqual(aes5(data), 43169916207196930977854297509856771626);
     try std.testing.expectEqual(

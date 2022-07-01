@@ -44,6 +44,16 @@ pub fn PRNGKey(comptime mix: fn (u128) u128) type {
             return @ptrCast([*]u128, rtn.ptr)[0..n];
         }
 
+        pub fn randint(self: *@This(), comptime T: type, m: T, M: T, comptime
+        n: usize) [n]T {
+            var entropy = self.random(n);
+            var rtn: [n]T = undefined;
+            const diff = M-m+1;
+            for (rtn) |*x, i|
+                x.* = @intCast(T, m + (entropy[i] % diff));
+            return rtn;
+        }
+
         pub fn uniform(self: *@This(), comptime n: usize) [n]f64 {
             var entropy = self.random((n >> 1) + 1);
             var rtn: [n]f64 = undefined;

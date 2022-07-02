@@ -504,3 +504,13 @@ number of elements we want while not magnifying the effects from merging
 disparate clusters. Initialization isn't super important because the average
 cluster size will be 2, so the space will be reasonably well covered by any
 random selection.
+
+Addendum
+========
+- For ML, I imagine that the transform of a set of centroids is a great
+  starting point for the next layer's centroids to accelerate kmeans.
+- For a few layers, you can probably (sometimes) get away with literally just
+  transforming the centroids and keeping the same input data.
+- In the above example, the idea is that the input matrix would be encoded (as
+  opposed to weight matrices), because it tends to remain fixed over a training
+  period.

@@ -36,11 +36,69 @@ pub fn Database(comptime V: type) type {
             return rtn;
         }
 
+        pub fn encode_quantized(self: *@This(), query: V) Quantized(f32) {
+            var rtn: @Vector(16, f32) = self.encode(query);
+            return Quantized(f32).init(rtn);
+        }
+
         pub fn apply(self: *@This(), allocator: Allocator, query: [16]f32) ![]f32 {
             var rtn = try allocator.alloc(f32, self.data.len);
             for (rtn) |*r, i|
                 r.* = query[@intCast(usize, self.data[i])];
             return rtn;
+        }
+
+        pub fn apply_quantized(self: *@This(), allocator: Allocator, _query:
+        Quantized(f32)) ![]f32 {
+            var query = _query;
+            var rtn = try allocator.alloc(f32, self.data.len);
+            for (rtn) |*r, i|
+                r.* = query.load(self.data[i]);
+            return rtn;
+        }
+    };
+}
+
+pub fn Quantized(comptime T: type) type {
+    const VT = @Vector(16, T);
+    const VI = @Vector(16, u8);
+
+    return struct {
+        d: VI,
+        ai: T,
+        b: T,
+
+        pub fn init(query: VT) @This() {
+            const m = @reduce(.Min, query);
+            const M = @reduce(.Max, query);
+            if (m == M) {
+                const d = [_]u8 {0} ** 16;
+                return @This() {
+                    .d = d,
+                    .ai = 1,
+                    .b = m,
+                };
+            } else {
+                const a = 255.0 / (M - m);
+                const b = a * m;
+                var d: [16]u8 = undefined;
+                for (d) |*x, i| {
+                    var z = (query[i] - b) * a;
+                    z = if (z > 255) 255 else z;
+                    z = if (z < 0) 0 else z;
+                    x.* = @floatToInt(u8, z);
+                }
+                return @This() {
+                    .d = d,
+                    .ai = 1.0 / a,
+                    .b = b,
+                };
+            }
+        }
+
+        pub fn load(self: *@This(), i: u4) T {
+            var rtn = @intToFloat(T, self.d[@intCast(usize, i)]);
+            return rtn * self.ai + self.b;
         }
     };
 }
@@ -59,9 +117,16 @@ test {
     var key = random.PRNGKey(random.Hashes.aes5){.seed = 42};
     var db = try Database(V).init(allocator, key, data[0..]);
     defer db.deinit();
+    var qquery = data[12] + @splat(100, @as(f32, 0.1));
+    var qenc_query = db.encode_quantized(qquery);
+    var qall = try db.apply_quantized(allocator, qenc_query);
+    defer allocator.free(qall);
     var query = data[12] + @splat(100, @as(f32, 0.1));
     var enc_query = db.encode(query);
     var all = try db.apply(allocator, enc_query);
     defer allocator.free(all);
-    std.debug.print("{any}\n", .{all});
+    var foo: [200]f32 = undefined;
+    for (foo) |*x, i|
+        x.* = (all[i] - qall[i]) * 2.0 / (all[i] + qall[i]);
+    std.debug.print("{any}\n", .{foo});
 }

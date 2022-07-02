@@ -45,7 +45,7 @@ fn l2(comptime V: type, a: V, b: V) @typeInfo(V).Vector.child {
     return dot(V, a - b, a - b);
 }
 
-fn assign(comptime V: type, comptime ncenters: usize, centroids: [ncenters]V, data: []V, assignment: []usize) void {
+pub fn assign(comptime V: type, comptime ncenters: usize, centroids: [ncenters]V, data: []V, assignment: []usize) void {
     const ti = @typeInfo(V).Vector;
     _ = ncenters;
     for (assignment) |*x, i| {
@@ -196,7 +196,7 @@ test "loyd square should partition basic cluster" {
 }
 
 // TODO: Handle duplicate data vectors
-fn loyd_recursive(
+pub fn loyd_recursive(
     allocator: Allocator,
     comptime V: type,
     _key: anytype,

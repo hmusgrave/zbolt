@@ -514,3 +514,11 @@ Addendum
 - In the above example, the idea is that the input matrix would be encoded (as
   opposed to weight matrices), because it tends to remain fixed over a training
   period.
+
+Raggedness
+==========
+- The Z padding is problematic for extensions to "not a dot product." It's
+  convenient, but we probably want to choose an encoding that allows us to
+  treat the last column specially without too much effort to support use cases
+  as basic as subtraction. A columner (per sub-vector location) representation
+  is probably fine. TBD.
